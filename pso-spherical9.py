@@ -24,7 +24,7 @@ os.makedirs('plots', exist_ok=True)
 # def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.4, c3=0.2, verbose=True): # 24-cell
 # def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.1, c3=0.2, verbose=True): 
 # def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.1, c2=0.4, c3=0.5, verbose=True, plots=False): 
-def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.4, c3=0.2, verbose=True, plots=True): #workhorse
+def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.4, c3=0.2, verbose=False, plots=True): #workhorse
     # log parameters
     print(f"PSO parameters: d={d}, n={n}, population_size={population_size}, max_iterations={max_iterations}, w={w}, c1={c1}, c2={c2}, c3={c3}")
 
@@ -32,6 +32,12 @@ def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.
     
     # Initialize particles and velocities and fitness
     particles = np.random.normal(0, 1, (population_size, d, n))
+    # try antipodal initialization of points if there are an even number of points
+    # why does this break things?
+    if n % 2 == 0:
+        for i in range(n//2):
+            particles[:,:,n//2+i] = -np.copy(particles[:,:,i])
+   
     particles = particles / np.linalg.norm(particles, axis=1, keepdims=True)
     velocities = np.random.normal(0, 0.1, (population_size, d, n))
     fitness = np.array([f(p) for p in particles])  # should parallelize this
@@ -121,7 +127,7 @@ def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.
         # default serial fitness calculation
         fitness = np.array([f(p) for p in particles])
         total_fitness_evals += population_size  # this is the number of fitness evaluations
-        # print(f"iteration {t}")
+        # print(f"iteration {t}, fitness: {fitness}")
 
         # Calculate and store average fitness
         average_fitness = np.mean(fitness)
@@ -150,7 +156,7 @@ def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.
         if (t + 1) % check_interval == 0:
 
             relative_change = abs(global_best_fitness - old_global_best_fitness) / max(abs(old_global_best_fitness), 1e-10)
-            if relative_change > 1e-6:
+            if relative_change > 1e-7:
                 print(f"Iteration {t+1:_}: Global best fitness has changed significantly.")
                 print(f"  total fitness evals: {total_fitness_evals:_}")
                 print(f"  Old fitness: {old_global_best_fitness} = {math.degrees(old_global_best_fitness):.2f} deg.")
@@ -247,6 +253,7 @@ def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.
     epsilon = 1e-8  # small constant to prevent division by zero
     max_adam_iterations = 50_000
     adam_epsilon = 1e-11  # convergence criterion
+    true_best_fitness = 0.0
 
     # Initialize Adam variables
     m = np.zeros_like(global_best)
@@ -277,12 +284,16 @@ def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.
         new_fitness = f(global_best)
         # print(f"Adam Iteration {i+1:_}: fitness = {math.degrees(new_fitness):.4f} deg")
         total_fitness_evals += 1
+        if new_fitness > true_best_fitness:
+            true_best_fitness = new_fitness
+            print(f"Adam Iteration {i+1:_}: fitness = {math.degrees(true_best_fitness):.4f} deg")
+
         
-        if (i + 1) % (max_adam_iterations//1000) == 0:
+        if verbose and (i + 1) % (max_adam_iterations//100) == 0:
             print(f"Adam Iteration {i+1:_}: fitness = {math.degrees(new_fitness):.4f} deg")
             print(f"total fitness evals: {total_fitness_evals:_}")
         
-        # Check for convergence
+        # Check for convergence (should we compare to true_best_fitness?)
         if abs(new_fitness - old_fitness) < adam_epsilon:
             print(f"Adam optimization converged after {i+1:_} iterations")
             break
@@ -290,6 +301,7 @@ def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.
     final_fitness = f(global_best)
     print(f"Final fitness after Adam optimization: {math.degrees(final_fitness):.4f} deg")
     print(f"Total fitness evaluations: {total_fitness_evals:_}")
+    print(f"True best fitness found: {math.degrees(true_best_fitness):.4f} deg")
     return global_best, final_variance
 
 
@@ -305,6 +317,7 @@ def min_angle(x):
     dots = np.dot(x.T, x)
     # set diagonal to -1 so that we don't count self-dots (dot==1, angle==0)
     np.fill_diagonal(dots, -1)
+    np.clip(dots, -1, 1, out=dots)
     angles = np.arccos(dots)
     # print(f"dots: {dots}")
     # print(f"angles: {angles}")
@@ -343,10 +356,11 @@ if __name__ == "__main__":
     # result, final_variance = pso(min_angle, d=4, n=12, population_size=50, max_iterations=200_000) #works (24-cell)
     # result, final_variance = pso(min_angle, d=4, n=24, population_size=30, max_iterations=10_000_000, plots=False) # almost finds E8?
     # result, final_variance = pso(min_angle, d=4, n=24, population_size=30, max_iterations=100_000, plots=False)
-    result, final_variance = pso(min_angle, d=4, n=12, population_size=1000, max_iterations=200_000, plots=False) 
+    result, final_variance = pso(min_angle, d=5, n=24, population_size=10, max_iterations=200_000, plots=False) 
 
-    # print(f"Optimum found at: {result}")
-    print(f"optimum fitness: {math.degrees(min_angle(result)):.4f} deg.")
+    # note this is not the true_best_fitness, which is the best fitness found during the PSO run after ADAM
+    # # print(f"Optimum found at: {result}")
+    # print(f"optimum fitness: {math.degrees(min_angle(result)):.4f} deg.")
     
     # Calculate gradient for the best solution
     
