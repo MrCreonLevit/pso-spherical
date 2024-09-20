@@ -24,7 +24,7 @@ os.makedirs('plots', exist_ok=True)
 # def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.4, c3=0.2, verbose=True): # 24-cell
 # def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.1, c3=0.2, verbose=True): 
 # def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.1, c2=0.4, c3=0.5, verbose=True, plots=False): 
-def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.4, c3=0.2, verbose=True, plots=True): #workhorse
+def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.6, c3=0.2, verbose=True, plots=True): #workhorse
     # log parameters
     print(f"PSO parameters: d={d}, n={n}, population_size={population_size}, max_iterations={max_iterations}, w={w}, c1={c1}, c2={c2}, c3={c3}")
 
@@ -32,7 +32,11 @@ def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.
     
     # Initialize particles and velocities and fitness
     particles = np.random.normal(0, 1, (population_size, d, n))
-    particles = particles / np.linalg.norm(particles, axis=1, keepdims=True)
+    # try antipodal initialization of points if there are an even number of points
+    # if n % 2 == 0:
+    #     particles[:,:,n//2:] = -particles[:,:,:n//2]
+    # particles = particles / np.linalg.norm(particles, axis=1, keepdims=True)
+    
     velocities = np.random.normal(0, 0.1, (population_size, d, n))
     fitness = np.array([f(p) for p in particles])  # should parallelize this
     
@@ -300,7 +304,7 @@ def cool(x, k=5.0):  # k=3 for a relatively steep curve
 
 # try @jitting the min_angle function with @jit decorator
 #@jit(nopython=True,)
-@njit(nogil=True)
+#@njit(nogil=True)
 def min_angle(x):
     dots = np.dot(x.T, x)
     # set diagonal to -1 so that we don't count self-dots (dot==1, angle==0)
@@ -308,7 +312,7 @@ def min_angle(x):
     angles = np.arccos(dots)
     # print(f"dots: {dots}")
     # print(f"angles: {angles}")
-    # print(f"min angle: {np.min(np.ravel(angles))}")
+    print(f"min angle: {np.min(np.ravel(angles))}")
     return np.min(np.ravel(angles))
 
 #@jit(nopython=True,)
@@ -343,7 +347,7 @@ if __name__ == "__main__":
     # result, final_variance = pso(min_angle, d=4, n=12, population_size=50, max_iterations=200_000) #works (24-cell)
     # result, final_variance = pso(min_angle, d=4, n=24, population_size=30, max_iterations=10_000_000, plots=False) # almost finds E8?
     # result, final_variance = pso(min_angle, d=4, n=24, population_size=30, max_iterations=100_000, plots=False)
-    result, final_variance = pso(min_angle, d=4, n=12, population_size=1000, max_iterations=200_000, plots=False) 
+    result, final_variance = pso(min_angle, d=4, n=12, population_size=30, max_iterations=200_000, plots=False) 
 
     # print(f"Optimum found at: {result}")
     print(f"optimum fitness: {math.degrees(min_angle(result)):.4f} deg.")
