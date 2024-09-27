@@ -21,24 +21,14 @@ def min_angle(x):
     dots = np.dot(x.T, x)
     # set diagonal to -1 so that we don't count self-dots (dot==1, angle==0)
     np.fill_diagonal(dots, -1)
-    np.clip(dots, -1, 1, out=dots)
-    angles = np.arccos(dots)
+  
     # print(f"dots: {dots}")
     # print(f"angles: {angles}")
     # print(f"min angle: {np.min(np.ravel(angles))}")
-    return np.min(np.ravel(angles))
 
-#@njit(nogil=True)
-def avg_angle(x):
-    dots = np.dot(x.T, x)
-
-    mask = np.triu(np.ones(dots.shape, dtype=bool), k=1)
-    
-    # Use the mask to select the upper triangular elements
-    upper_tri_values = dots[mask]
-    angles = np.arccos(upper_tri_values)
-
-    return np.mean(angles)
+    max_dot = max(-1, min(1, np.max(dots))) # make sure dot product is between -1 and 1
+    min_angle = np.arccos(max_dot)
+    return min_angle
 
 #@jit(nopython=True,)
 @njit(nogil=True)
@@ -69,7 +59,7 @@ os.makedirs('plots', exist_ok=True)
 # n = number of d-dimensional points which make up the code (e.g. d=3, n=4 for tetrahedron)
 
 @dask.delayed
-def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.0, c3=0.2, verbose=False, plots=True, thread=0): #workhorse
+def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.1, c3=0.5, verbose=False, plots=True, thread=0): #workhorse
     # log parameters
     # Generate a unique filename based on the current timestamp
     output_filename = f"pso_output_{thread}.log"
@@ -83,14 +73,13 @@ def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.
     # Initialize particles and velocities and fitness
     particles = np.random.normal(0, 1, (population_size, d, n))
     # try antipodal initialization of points if there are an even number of points
-    # why does this break things?
     if n % 2 == 0:
         for i in range(n//2):
             particles[:,:,n//2+i] = -np.copy(particles[:,:,i])
    
     particles = particles / np.linalg.norm(particles, axis=1, keepdims=True)
     velocities = np.random.normal(0, 0.1, (population_size, d, n))
-    fitness = np.array([f(p) for p in particles])  # should parallelize this
+    fitness = np.array([f(p) for p in particles])  # should parallelize this?
     
     # Initialize personal best and global best
     personal_best = particles.copy()
@@ -201,12 +190,12 @@ def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.
     print("Starting Adam optimization...", file=output_file, flush=True)
 
     # Adam parameters
-    alpha = 0.001  # learning rate
+    alpha = 0.003  # learning rate
     beta1 = 0.9  # exponential decay rate for first moment estimates
     beta2 = 0.999  # exponential decay rate for second moment estimates
     epsilon = 1e-8  # small constant to prevent division by zero
     max_adam_iterations = 50_000
-    adam_epsilon = 1e-11  # convergence criterion
+    adam_epsilon = 1e-10  # convergence criterion
     true_best_fitness = 0.0
 
     # Initialize Adam variables
@@ -258,31 +247,26 @@ def pso(f, d, n, population_size=1000, max_iterations=100, w=0.95, c1=0.5, c2=0.
     print(f"True best fitness found: {math.degrees(true_best_fitness):.4f} deg", file=output_file, flush=True)
     return math.degrees(true_best_fitness)
 
-
-@dask.delayed
-def work(i):
-    sleep(5)
-    print(f"Finished work {i}", flush=True)
-    return i*i
+import psutil
 
 
-# Set up Dask client
-# client = Client()
+# Total Number of PSO runs (using dask to run in parallel)
+num_runs = 100
 
-# Number of PSO runs
-num_runs = 10
-
-
-# Optimize test functions
 if __name__ == "__main__":
     # Set a fixed seed for reproducibility. You can use any integer value as the seed
     np.random.seed(int(time.time()))
+ 
+    total_cores = psutil.cpu_count(logical=False)  # Physical cores only
+    logical_cores = psutil.cpu_count(logical=True)  # Including hyperthreading
+    print(f"Physical cores: {total_cores}")
+    print(f"Logical cores: {logical_cores}")
+
     print("Optimizing minimum angle with PSO:",flush=True)
     results = []
     for i in range(num_runs):
         print(f"Queing up PSO {i+1} of {num_runs}",flush=True)
-        y = dask.delayed(pso)(min_angle, 4, 12, population_size=30, max_iterations=100, c2=0.0, plots=False, thread=i)
-        #y = dask.delayed(work)(i)
+        y = dask.delayed(pso)(min_angle, 4, 120, population_size=10, max_iterations=1000, plots=False, thread=i)
         results.append(y)
-    all_results = dask.compute(*results)    
-    print(all_results)    
+    all_results = dask.compute(*results, num_workers=logical_cores-2)  # leave 2 cores free
+    print(sorted(all_results))    
