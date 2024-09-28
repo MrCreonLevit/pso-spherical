@@ -12,7 +12,7 @@ import jax.numpy as jnp
 
 import dask
 
-def cool(x, k=5.0):  # k=3 for a relatively steep curve
+def cool(x, k=5.0):  # k=3 for a relatively steep curve 
     if x >= 1:
         return 1  # To ensure it approaches 1 as x approaches or equals 1
     return (2 / (1 + math.exp(-k * (x / (1 - x)))))-1
